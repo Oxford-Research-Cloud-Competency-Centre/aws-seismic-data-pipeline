@@ -21,7 +21,7 @@ def send_data_to_aws():
         s3 = boto3.client('s3')
         
         # Create a unique bucket name (this is just for demonstration)
-        bucket_name = f"seismic-data-{datetime.now().strftime('%Y%m%d%H%M%S')}"
+        bucket_name = f"seismic-data"
         
         # Create the bucket (note: in production, you'd check if it exists first)
         # This will likely fail without proper AWS credentials
@@ -32,8 +32,11 @@ def send_data_to_aws():
             empty_file_path = "/tmp/empty_file.txt"
             with open(empty_file_path, "w") as f:
                 pass
+				
+            file_path = f"{timestamp_folder}/empty_file.txt"
             
-            s3.upload_file(empty_file_path, bucket_name, "empty_file.txt")
+            s3.upload_file(empty_file_path, bucket_name, file_path)
+            
             os.remove(empty_file_path)
             
             print(f"Successfully created bucket {bucket_name} and uploaded empty file")
