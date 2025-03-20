@@ -1,9 +1,7 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AWS Seismic Data Pipeline</title>
+    <title>Data Scheduler</title>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -11,119 +9,142 @@
             margin: 0 auto;
             padding: 20px;
         }
-        .container {
+        .card {
             border: 1px solid #ddd;
+            border-radius: 8px;
             padding: 20px;
-            border-radius: 5px;
-            margin-top: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
         }
-        .timer {
+        .button {
+            background-color: #4CAF50;
+            border: none;
+            color: white;
+            padding: 10px 20px;
+            text-align: center;
+            text-decoration: none;
+            display: inline-block;
+            font-size: 16px;
+            margin: 4px 2px;
+            cursor: pointer;
+            border-radius: 4px;
+        }
+        .countdown {
             font-size: 24px;
             font-weight: bold;
-            margin: 20px 0;
-        }
-        button {
-            background-color: #4CAF50;
-            color: white;
-            padding: 10px 15px;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 16px;
-        }
-        button:hover {
-            background-color: #45a049;
+            color: #333;
         }
         .status {
             margin-top: 10px;
-            padding: 10px;
+            padding: 8px;
             border-radius: 4px;
-            display: none;
         }
-        .success {
-            background-color: #dff0d8;
-            color: #3c763d;
+        .connected {
+            background-color: #d4edda;
+            color: #155724;
         }
-        .error {
-            background-color: #f2dede;
-            color: #a94442;
+        .disconnected {
+            background-color: #f8d7da;
+            color: #721c24;
+        }
+        .waiting {
+            background-color: #fff3cd;
+            color: #856404;
         }
     </style>
 </head>
 <body>
-    <h1>AWS Seismic Data Pipeline</h1>
+    <h1>Data Scheduler Dashboard</h1>
+    
+    <div class="card">
+        <h2>ZeroTier VPN Status</h2>
+        <div id="zerotier-status" class="status disconnected">Not connected</div>
+        <button id="reconnect-btn" class="button" style="background-color: #007bff;">Reconnect ZeroTier</button>
+    </div>
 
-    <div class="container">
-        <h2>Data Sync Status</h2>
-        <div>
-            <p>Next scheduled data sync in:</p>
-            <div class="timer" id="countdown">Loading...</div>
-        </div>
-        
-        <button id="triggerButton">Trigger Data Sync Now</button>
-        
-        <div id="statusMessage" class="status"></div>
+    <div class="card">
+        <h2>Next Scheduled Data Send</h2>
+        <div>Time until next scheduled run: <span id="countdown" class="countdown">calculating...</span></div>
+        <button id="trigger-btn" class="button">Trigger Data Send Now</button>
+        <div id="result-message" style="margin-top: 15px;"></div>
     </div>
 
     <script>
-        // Function to format time as HH:MM:SS
-        function formatTime(seconds) {
-            const hours = Math.floor(seconds / 3600);
-            const minutes = Math.floor((seconds % 3600) / 60);
-            const secs = Math.floor(seconds % 60);
-            
-            return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-        }
-        
-        // Function to update the countdown timer
+        // Update countdown timer
         function updateCountdown() {
             fetch('/get-next-run-time')
                 .then(response => response.json())
                 .then(data => {
-                    const seconds = data.next_run_seconds;
-                    document.getElementById('countdown').textContent = formatTime(seconds);
+                    const seconds = Math.round(data.next_run_seconds);
+                    const minutes = Math.floor(seconds / 60);
+                    const remainingSeconds = seconds % 60;
+                    document.getElementById('countdown').textContent = 
+                        `${minutes}m ${remainingSeconds}s`;
                     
-                    // If time is up, refresh to get new time
-                    if (seconds <= 0) {
-                        setTimeout(() => {
-                            updateCountdown();
-                        }, 2000);
+                    // Update ZeroTier status
+                    const statusElement = document.getElementById('zerotier-status');
+                    statusElement.textContent = data.zerotier_status;
+                    
+                    // Update status class based on connection status
+                    if (data.zerotier_connected) {
+                        statusElement.className = 'status connected';
+                    } else if (data.zerotier_status.includes('Waiting')) {
+                        statusElement.className = 'status waiting';
+                    } else {
+                        statusElement.className = 'status disconnected';
                     }
+                    
+                    // Update trigger button state based on ZeroTier status
+                    document.getElementById('trigger-btn').disabled = !data.zerotier_connected;
                 })
                 .catch(error => {
-                    console.error('Error fetching next run time:', error);
+                    console.error('Error fetching countdown:', error);
                     document.getElementById('countdown').textContent = 'Error';
                 });
         }
-        
-        // Initial countdown update
-        updateCountdown();
-        
-        // Update countdown every second
-        setInterval(updateCountdown, 1000);
-        
-        // Handle manual trigger button
-        document.getElementById('triggerButton').addEventListener('click', function() {
-            const statusMessage = document.getElementById('statusMessage');
-            statusMessage.textContent = 'Triggering data sync...';
-            statusMessage.className = 'status';
-            statusMessage.style.display = 'block';
+
+        // Trigger data send manually
+        document.getElementById('trigger-btn').addEventListener('click', function() {
+            document.getElementById('result-message').textContent = 'Triggering data send...';
             
             fetch('/trigger-manually', {
                 method: 'POST',
             })
             .then(response => response.json())
             .then(data => {
-                statusMessage.textContent = 'Data sync triggered successfully!';
-                statusMessage.className = 'status success';
-                updateCountdown(); // Update the countdown after manual trigger
+                document.getElementById('result-message').textContent = data.message;
+                if (data.status === 'success') {
+                    updateCountdown();
+                }
             })
             .catch(error => {
-                console.error('Error triggering data sync:', error);
-                statusMessage.textContent = 'Error triggering data sync. Please try again.';
-                statusMessage.className = 'status error';
+                console.error('Error triggering data send:', error);
+                document.getElementById('result-message').textContent = 'Error triggering data send';
             });
         });
+        
+        // Reconnect ZeroTier
+        document.getElementById('reconnect-btn').addEventListener('click', function() {
+            document.getElementById('zerotier-status').textContent = 'Initiating reconnection...';
+            
+            fetch('/reconnect-zerotier', {
+                method: 'POST',
+            })
+            .then(response => response.json())
+            .then(data => {
+                document.getElementById('zerotier-status').textContent = data.message;
+            })
+            .catch(error => {
+                console.error('Error reconnecting ZeroTier:', error);
+                document.getElementById('zerotier-status').textContent = 'Error reconnecting ZeroTier';
+            });
+        });
+
+        // Initial countdown update
+        updateCountdown();
+        
+        // Update countdown every second
+        setInterval(updateCountdown, 1000);
     </script>
 </body>
 </html>
