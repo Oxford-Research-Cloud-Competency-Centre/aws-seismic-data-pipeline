@@ -5,6 +5,8 @@ import boto3
 import os
 
 app = Flask(__name__, template_folder=".")
+region = "eu-west-2"
+bucket_name = "paul-demanze-test-seismic-data" # name must be unique across all of S3 buckets of all users
 
 # Global variable to track next scheduled run
 next_run_time = datetime.now() + timedelta(minutes=1)
@@ -12,36 +14,58 @@ next_run_time = datetime.now() + timedelta(minutes=1)
 def send_data_to_aws():
     """
     Pull data and send it to AWS.
-    This is a placeholder function that creates a bucket and writes an empty file.
+    This is a placeholder function that checks if a bucket exists, creates it if needed,
+    and writes a file.
     """
     global next_run_time
     
     try:
         # Create an S3 client
         s3 = boto3.client('s3')
+               
+        # Generate timestamp folder for organizing files
+        timestamp_str = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        timestamp_folder = f"data_{timestamp_str}"
         
-        # Create a unique bucket name (this is just for demonstration)
-        bucket_name = f"seismic-data"
-        
-        # Create the bucket (note: in production, you'd check if it exists first)
-        # This will likely fail without proper AWS credentials
+        # Check if bucket exists
         try:
-            s3.create_bucket(Bucket=bucket_name)
+            s3.head_bucket(Bucket=bucket_name)
+            print(f"Bucket {bucket_name} already exists")
+        except s3.exceptions.ClientError as e:
+            error_code = e.response['Error']['Code']
+            if error_code == '404':
+                # Bucket doesn't exist, create it
+                try:
+                    s3.create_bucket(
+                        Bucket=bucket_name,
+                        CreateBucketConfiguration={
+                            'LocationConstraint': region
+                        }
+                    )
+                    print(f"Bucket {bucket_name} created successfully")
+                except Exception as bucket_create_error:
+                    print(f"Failed to create bucket: {str(bucket_create_error)}")
+                    return
+            else:
+                # Some other error occurred
+                print(f"Error checking bucket: {str(e)}")
+                return
             
-            # Create an empty file and upload it to the bucket
-            empty_file_path = "/tmp/empty_file.txt"
+        # Create an empty file and upload it to the bucket
+        try:
+            empty_file_path = "empty_file.txt"
             with open(empty_file_path, "w") as f:
                 pass
-				
+            
             file_path = f"{timestamp_folder}/empty_file.txt"
             
             s3.upload_file(empty_file_path, bucket_name, file_path)
             
             os.remove(empty_file_path)
             
-            print(f"Successfully created bucket {bucket_name} and uploaded empty file")
-        except Exception as e:
-            print(f"AWS operation failed: {str(e)}")
+            print(f"Successfully uploaded file to {bucket_name}/{file_path}")
+        except Exception as file_error:
+            print(f"File operation failed: {str(file_error)}")
     except Exception as e:
         print(f"Error in send_data_to_aws: {str(e)}")
     
