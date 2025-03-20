@@ -6,6 +6,7 @@ The dashboard:
 
 - Displays time until the next trigger 
 - Has a button for manual trigger 
+- Displays VPN authorization status 
 
 ![Dashboard](README_images/dashboard.png)
 
