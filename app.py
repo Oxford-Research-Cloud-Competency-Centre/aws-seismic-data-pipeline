@@ -9,9 +9,13 @@ import threading
 import json
 
 app = Flask(__name__, template_folder=".")
-region = "eu-west-2"
-bucket_name = "paul-demanze-test-seismic-data"  # name must be unique in all of AWS, so "seismic-data" would already be taken by someone else 
-ZEROTIER_NETWORK_ID = "fada62b015140480"
+
+with open("config.json", "r") as f:
+    config = json.load(f)
+
+region = config["region"]
+bucket_name = config["bucket_name"]
+ZEROTIER_NETWORK_ID = config["network_id"]
 
 # Global variables
 next_run_time = datetime.now() + timedelta(minutes=1)

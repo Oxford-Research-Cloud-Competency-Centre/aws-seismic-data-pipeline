@@ -3,10 +3,15 @@
 # © The Chancellor, Masters and Scholars of The University of Oxford. All rights reserved.
 
 # Default configuration variables
-REGION = "eu-west-2"
-REPOSITORY = "hello-aws"
+import json
+
+with open("config.json") as f:
+    config = json.load(f)
+
+REGION = "eu-west-2"  
+REPOSITORY = config["repository"]
 TAG = "latest"
-SERVICE_NAME = "hello-aws"
+SERVICE_NAME = config["service_name"]
 CPU = "1 vCPU"
 MEMORY = "2 GB"
 

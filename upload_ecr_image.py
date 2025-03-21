@@ -3,8 +3,13 @@
 # © The Chancellor, Masters and Scholars of The University of Oxford. All rights reserved.
 
 # Default configuration variables
+import json
+
+with open("config.json") as f:
+    config = json.load(f)
+
 REGION = "eu-west-2"
-REPOSITORY = "hello-aws"
+REPOSITORY = config["repository"] 
 TAG = "latest"
 
 import os
