@@ -30,7 +30,7 @@ def run_command(command, check=True, silent=False):
 def create_ecr_repository():
     """Create an ECR repository if it doesn't exist."""
     # Check if repository exists
-    check_repo_cmd = f"aws ecr describe-repositories --repository-names {REPOSITORY} --region {REGION} 2>/dev/null"
+    check_repo_cmd = f"aws ecr describe-repositories --repository-names {REPOSITORY} --region {REGION}"
     result = run_command(check_repo_cmd, check=False)
     
     if result.returncode != 0:
@@ -78,6 +78,13 @@ def build_and_push_image():
         with open("Dockerfile", "w") as f:
             f.write("FROM python:3.11-slim\n")
             f.write("WORKDIR /app\n")
+            
+            # Install ZeroTier CLI using the simple one-liner
+            f.write("# Install ZeroTier\n")
+            f.write("RUN apt-get update && apt-get install -y curl\n")
+            f.write("RUN curl -s https://install.zerotier.com | bash\n")
+            
+            # Continue with the original Dockerfile
             f.write("COPY requirements.txt .\n")
             f.write("RUN pip install --no-cache-dir -r requirements.txt\n")
             f.write("COPY . .\n")
@@ -114,6 +121,7 @@ def main():
     
     print(f"\nSuccessfully built and pushed image: {image_uri}")
     print("\nYou can now use this image in your AWS App Runner service or other AWS services.")
+    print("\nNOTE: To use ZeroTier in container environments, you may need to run the container with --cap-add=NET_ADMIN and --device=/dev/net/tun privileges.")
 
 if __name__ == "__main__":
     main()
