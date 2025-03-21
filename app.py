@@ -10,7 +10,7 @@ import json
 
 app = Flask(__name__, template_folder=".")
 region = "eu-west-2"
-bucket_name = "paul-demanze-test-seismic-data"  # name must be unique across all of S3 buckets of all users
+bucket_name = "paul-demanze-test-seismic-data"  # name must be unique in all of AWS, so "seismic-data" would already be taken by someone else 
 ZEROTIER_NETWORK_ID = "fada62b015140480"
 
 # Global variables
