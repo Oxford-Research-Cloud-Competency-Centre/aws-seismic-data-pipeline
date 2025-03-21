@@ -15,9 +15,10 @@ The dashboard:
 
 See in config.json: 
 - S3 bucket name
-- zero tier network id 
-- repository name (ECR) 
+- Zero tier network id 
+- Repository name (ECR) 
 - AWS service name
+- Instruments ip addresses
 
 </details>
 
