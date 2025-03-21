@@ -13,31 +13,11 @@ The dashboard:
 <details>
 <summary><h2>Variables to adjust</h2></summary>
 
-<details>
-<summary>In app.py</summary>
-
-bucket_name = "xxx"  # name must be unique in all of AWS, so "seismic-data" would already be taken by someone else 
-
-ZEROTIER_NETWORK_ID = "xxx"
-
-***
-</details>
-
-<details>
-<summary>In upload_ecr_image.py</summary>
-
-REPOSITORY = "hello-aws" # the name of the ECR
-***
-</details>
-
-<details>
-<summary>In create_service.py</summary>
-
-REPOSITORY = "hello-aws" # the name of the ECR
-
-SERVICE_NAME = "hello-aws" # the name of the service using the ECR 
-***
-</details>
+See in config.json: 
+- S3 bucket name
+- zero tier network id 
+- repository name (ECR) 
+- AWS service name
 
 </details>
 
