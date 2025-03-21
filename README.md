@@ -17,6 +17,7 @@ The dashboard:
 <summary>In app.py</summary>
 
 bucket_name = "xxx"  # name must be unique in all of AWS, so "seismic-data" would already be taken by someone else 
+
 ZEROTIER_NETWORK_ID = "xxx"
 
 ***
@@ -33,6 +34,7 @@ REPOSITORY = "hello-aws" # the name of the ECR
 <summary>In create_service.py</summary>
 
 REPOSITORY = "hello-aws" # the name of the ECR
+
 SERVICE_NAME = "hello-aws" # the name of the service using the ECR 
 ***
 </details>
@@ -118,7 +120,7 @@ https://www.docker.com/get-started/
 <details>
 <summary>Step 5. Check that the repository appears </summary>
 
-![Ac](README_images/ecr_repositories.png)
+![ECR repository](README_images/ecr_repositories.png)
 
 ***
 </details>
@@ -127,8 +129,20 @@ https://www.docker.com/get-started/
 
 
 <details>
-<summary><h2>Deploying the ECR image</h2></summary>
+<summary><h2>Creating the service</h2></summary>
 
-An ECR image can be hosted in several places: Beanstalk, App Runner. To be decided. 
+Run create_service.py
 
 </details>
+
+<details>
+<summary><h2>Connect to VPN</h2></summary>
+
+The service will automatically attempt to join the VPN. 
+
+Login to zerotier.com and authorize it. 
+
+![VPN](README_images/vpn.png)
+
+</details>
+
