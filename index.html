@@ -76,10 +76,11 @@
                 .then(response => response.json())
                 .then(data => {
                     const seconds = Math.round(data.next_run_seconds);
-                    const minutes = Math.floor(seconds / 60);
+                    const hours = Math.floor(seconds / 3600); 
+                    const minutes = Math.floor(seconds / 60) % 60;
                     const remainingSeconds = seconds % 60;
                     document.getElementById('countdown').textContent = 
-                        `${minutes}m ${remainingSeconds}s`;
+                        `${hours}h ${minutes}m ${remainingSeconds}s`;
                     
                     // Update ZeroTier status
                     const statusElement = document.getElementById('zerotier-status');

@@ -2,3 +2,5 @@ flask
 gunicorn
 apscheduler
 boto3
+aiohttp
+obspy
