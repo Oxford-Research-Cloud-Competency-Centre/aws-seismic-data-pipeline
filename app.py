@@ -37,71 +37,81 @@ next_run_time = datetime.now() + timedelta(days=1)
 zerotier_connected = False
 zerotier_status = "Not connected"
 
-def check_zerotier_status():
-    """Check if already connected to ZeroTier network"""
+def check_zerotier_network_status():
+    """Check detailed ZeroTier network information"""
     try:
-        result = subprocess.run(
-            ["zerotier-cli", "listnetworks"], 
-            capture_output=True, 
-            text=True,
-            shell=True  # Use shell=True to help with command resolution
+        # Get network status
+        network_result = subprocess.Popen(
+            f"zerotier-cli -j listnetworks",
+            shell=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            universal_newlines=True
         )
-        return ZEROTIER_NETWORK_ID in result.stdout
+        network_output, _ = network_result.communicate()
+        logger.info(f"Network status: {network_output}")
+        
+        # Try to parse JSON output
+        try:
+            import json
+            networks = json.loads(network_output)
+            logger.info(f"Parsed network data: {networks}")
+            
+            # Check if our network exists and has an assigned address
+            for network in networks:
+                if network.get('id') == ZEROTIER_NETWORK_ID:
+                    logger.info(f"Found network: {network}")
+                    
+                    # Check if we have assigned addresses
+                    if network.get('assignedAddresses'):
+                        logger.info(f"We have assigned addresses: {network['assignedAddresses']}")
+                        return True
+            
+            return False
+        except json.JSONDecodeError:
+            logger.error(f"Failed to parse JSON: {network_output}")
+            return False
     except Exception as e:
-        logger.error(f"Error checking ZeroTier status: {str(e)}")
+        logger.error(f"Error checking network status: {str(e)}")
         return False
 
 def connect_to_zerotier():
-    """Connect to the ZeroTier network and wait for approval"""
+    """Connect to the ZeroTier network and properly capture all output"""
     global zerotier_connected, zerotier_status
     
     try:
-        # Get current ZeroTier info
-        info_result = subprocess.run(
-            ["zerotier-cli", "info"],
-            capture_output=True,
-            text=True,
-            shell=True
+        # Check ZeroTier info and capture all output
+        logger.info("Checking ZeroTier status")
+        info_process = subprocess.Popen(
+            "zerotier-cli info",
+            shell=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,  # Redirect stderr to stdout
+            universal_newlines=True    # Return strings instead of bytes
         )
-        logger.info(f"ZeroTier client info: {info_result.stdout.strip()}")
+        info_output, _ = info_process.communicate()
+        logger.info(f"ZeroTier info output: {info_output}")
         
-        # Check if already connected
-        if check_zerotier_status():
-            zerotier_connected = True
-            zerotier_status = "Already connected"
-            logger.info("Already connected to ZeroTier network")
-            return True
-            
-        # Attempt to join the network
-        logger.info(f"Attempting to join ZeroTier network: {ZEROTIER_NETWORK_ID}")
-        zerotier_status = "Joining network..."
-        
-        join_result = subprocess.run(
-            ["zerotier-cli", "join", ZEROTIER_NETWORK_ID],
-            capture_output=True,
-            text=True,
-            shell=True
+        # Try to join the network
+        logger.info(f"Attempting to join network: {ZEROTIER_NETWORK_ID}")
+        join_process = subprocess.Popen(
+            f"zerotier-cli join {ZEROTIER_NETWORK_ID}",
+            shell=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,  # Get everything in one stream
+            universal_newlines=True
         )
+        join_output, _ = join_process.communicate()
+        logger.info(f"Join output: {join_output}")
         
-        if "200" in join_result.stdout:
-            logger.info("Join command successful, waiting for authorization...")
+        # Continue with your logic based on the output
+        if "200" in join_output:
+            logger.info("Join successful")
             zerotier_status = "Waiting for authorization..."
-            
-            # Get updated ZeroTier info after join
-            info_result = subprocess.run(
-                ["zerotier-cli", "info"],
-                capture_output=True,
-                text=True,
-                shell=True
-            )
-            logger.info(f"ZeroTier client info after join: {info_result.stdout.strip()}")
-            
-            # Start monitoring for successful connection
             monitor_zerotier_connection()
             return True
         else:
-            logger.error(f"Failed to join ZeroTier network: {join_result.stdout}")
-            zerotier_status = f"Join failed: {join_result.stdout}"
+            zerotier_status = f"Join failed: {join_output}"
             return False
             
     except Exception as e:
@@ -119,21 +129,25 @@ def monitor_zerotier_connection():
         while not zerotier_connected:
             try:
                 # Check network status
-                result = subprocess.run(
-                    ["zerotier-cli", "listnetworks"], 
-                    capture_output=True, 
-                    text=True,
-                    shell=True
+                list_process = subprocess.Popen(
+                    "zerotier-cli listnetworks",
+                    shell=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    universal_newlines=True
                 )
+                list_output, _ = list_process.communicate()
                 
-                # Parse output to check for connection and authorization
-                if ZEROTIER_NETWORK_ID in result.stdout:
-                    # Check if OK/ACTIVE and we have an IP
-                    if "OK" in result.stdout and "PRIVATE" not in result.stdout:
+                if ZEROTIER_NETWORK_ID in list_output:
+                    if "OK" in list_output:
                         zerotier_connected = True
                         zerotier_status = "Connected and authorized"
                         logger.info("Successfully connected to ZeroTier network")
                         break
+                    else:
+                        # Joined but waiting for authorization
+                        logger.info("Joined but waiting for authorization")
+                        zerotier_status = "Waiting for authorization from network admin"
                 
                 attempts += 1
                 time.sleep(10)  # Check every 10 seconds
@@ -150,7 +164,6 @@ def monitor_zerotier_connection():
                 
             except Exception as e:
                 logger.error(f"Error monitoring ZeroTier: {str(e)}")
-                # Sleep before retrying to avoid tight error loops
                 time.sleep(30)
     
     # Start monitoring in a separate thread

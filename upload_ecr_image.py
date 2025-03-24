@@ -69,45 +69,19 @@ def build_and_push_image():
     account_id_cmd = "aws sts get-caller-identity --query Account --output text"
     account_id = run_command(account_id_cmd).stdout.strip()
     
-    # Track if we created a temporary Dockerfile
-    dockerfile_created = False
+    # Use the permanent Dockerfile
+    print("Using Dockerfile to build image...")
     
-    # Create Dockerfile temporarily if it doesn't exist
-    if not os.path.exists("Dockerfile"):
-        print("Creating temporary Dockerfile...")
-        with open("Dockerfile", "w") as f:
-            f.write("FROM python:3.11-slim\n")
-            f.write("WORKDIR /app\n")
-            
-            # Install ZeroTier CLI using the simple one-liner
-            f.write("# Install ZeroTier\n")
-            f.write("RUN apt-get update && apt-get install -y curl\n")
-            f.write("RUN curl -s https://install.zerotier.com | bash\n")
-            
-            # Continue with the original Dockerfile
-            f.write("COPY requirements.txt .\n")
-            f.write("RUN pip install --no-cache-dir -r requirements.txt\n")
-            f.write("COPY . .\n")
-            f.write("EXPOSE 8080\n")
-            f.write("CMD [\"python\", \"-m\", \"gunicorn\", \"--bind\", \"0.0.0.0:8080\", \"app:app\"]\n")
-        dockerfile_created = True
+    # Build the Docker image
+    image_uri = f"{account_id}.dkr.ecr.{REGION}.amazonaws.com/{REPOSITORY}:{TAG}"
+    build_cmd = f"docker build -t {image_uri} ."
+    run_command(build_cmd)
     
-    try:
-        # Build the Docker image
-        image_uri = f"{account_id}.dkr.ecr.{REGION}.amazonaws.com/{REPOSITORY}:{TAG}"
-        build_cmd = f"docker build -t {image_uri} ."
-        run_command(build_cmd)
-        
-        # Push the image to ECR
-        push_cmd = f"docker push {image_uri}"
-        run_command(push_cmd)
-        
-        return image_uri
-    finally:
-        # Clean up temporary Dockerfile if we created it
-        if dockerfile_created and os.path.exists("Dockerfile"):
-            print("Removing temporary Dockerfile...")
-            os.remove("Dockerfile")
+    # Push the image to ECR
+    push_cmd = f"docker push {image_uri}"
+    run_command(push_cmd)
+    
+    return image_uri
 
 def main():
     # Authenticate with ECR
