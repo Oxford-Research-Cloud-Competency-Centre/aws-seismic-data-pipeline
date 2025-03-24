@@ -153,7 +153,7 @@ aws ecr get-login-password --region eu-west-2 | docker login --username AWS --pa
 
 # Pull and run the container
 docker pull {image_uri}
-docker run -d --name {service_name} -p 8080:8080 --restart always --privileged {image_uri}
+docker run -d --name {service_name} -p 8080:8080 -p 9993:9993/udp --restart always --privileged {image_uri}
 
 # Create a status check file
 echo "Container setup complete" > /tmp/container-setup-complete.log
