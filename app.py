@@ -56,6 +56,15 @@ def connect_to_zerotier():
     global zerotier_connected, zerotier_status
     
     try:
+        # Get current ZeroTier info
+        info_result = subprocess.run(
+            ["zerotier-cli", "info"],
+            capture_output=True,
+            text=True,
+            shell=True
+        )
+        logger.info(f"ZeroTier client info: {info_result.stdout.strip()}")
+        
         # Check if already connected
         if check_zerotier_status():
             zerotier_connected = True
@@ -77,6 +86,15 @@ def connect_to_zerotier():
         if "200" in join_result.stdout:
             logger.info("Join command successful, waiting for authorization...")
             zerotier_status = "Waiting for authorization..."
+            
+            # Get updated ZeroTier info after join
+            info_result = subprocess.run(
+                ["zerotier-cli", "info"],
+                capture_output=True,
+                text=True,
+                shell=True
+            )
+            logger.info(f"ZeroTier client info after join: {info_result.stdout.strip()}")
             
             # Start monitoring for successful connection
             monitor_zerotier_connection()
