@@ -21,7 +21,7 @@ image_uri = f"{account_id}.dkr.ecr.eu-west-2.amazonaws.com/{repository}:latest"
 print(f"Deploying {image_uri} to Ubuntu EC2 with full AWS access...")
 
 # Create IAM role with full AWS access
-role_name = f"{service_name}-admin-role"
+role_name = f"{service_name}-all-role"
 try:
     # Create the role
     assume_role_policy = {
@@ -72,7 +72,7 @@ except Exception as e:
 vpc_response = ec2.describe_vpcs(Filters=[{'Name': 'isDefault', 'Values': ['true']}])
 vpc_id = vpc_response['Vpcs'][0]['VpcId']
 
-sg_name = f"{service_name}-sg-full"
+sg_name = f"{service_name}-sg-all"
 try:
     sg_response = ec2.create_security_group(
         GroupName=sg_name,
@@ -102,6 +102,19 @@ try:
                 'IpProtocol': 'tcp',
                 'FromPort': 22,
                 'ToPort': 22,
+                'IpRanges': [{'CidrIp': '0.0.0.0/0'}]
+            }
+        ]
+    )
+    
+    # Open port 9993 for ZeroTier
+    ec2.authorize_security_group_ingress(
+        GroupId=sg_id,
+        IpPermissions=[
+            {
+                'IpProtocol': 'udp',
+                'FromPort': 9993,
+                'ToPort': 9993,
                 'IpRanges': [{'CidrIp': '0.0.0.0/0'}]
             }
         ]
