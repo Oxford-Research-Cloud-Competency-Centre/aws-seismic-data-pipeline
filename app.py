@@ -10,6 +10,18 @@ import json
 import asyncio
 import aiohttp  # For asynchronous HTTP requests
 from pathlib import Path
+import logging
+import sys
+
+# Set up logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(sys.stdout)
+    ]
+)
+logger = logging.getLogger(__name__)
 
 app = Flask(__name__, template_folder=".")
 
@@ -36,7 +48,7 @@ def check_zerotier_status():
         )
         return ZEROTIER_NETWORK_ID in result.stdout
     except Exception as e:
-        print(f"Error checking ZeroTier status: {str(e)}")
+        logger.error(f"Error checking ZeroTier status: {str(e)}")
         return False
 
 def connect_to_zerotier():
@@ -48,11 +60,11 @@ def connect_to_zerotier():
         if check_zerotier_status():
             zerotier_connected = True
             zerotier_status = "Already connected"
-            print("Already connected to ZeroTier network")
+            logger.info("Already connected to ZeroTier network")
             return True
             
         # Attempt to join the network
-        print(f"Attempting to join ZeroTier network: {ZEROTIER_NETWORK_ID}")
+        logger.info(f"Attempting to join ZeroTier network: {ZEROTIER_NETWORK_ID}")
         zerotier_status = "Joining network..."
         
         join_result = subprocess.run(
@@ -63,19 +75,19 @@ def connect_to_zerotier():
         )
         
         if "200" in join_result.stdout:
-            print("Join command successful, waiting for authorization...")
+            logger.info("Join command successful, waiting for authorization...")
             zerotier_status = "Waiting for authorization..."
             
             # Start monitoring for successful connection
             monitor_zerotier_connection()
             return True
         else:
-            print(f"Failed to join ZeroTier network: {join_result.stdout}")
+            logger.error(f"Failed to join ZeroTier network: {join_result.stdout}")
             zerotier_status = f"Join failed: {join_result.stdout}"
             return False
             
     except Exception as e:
-        print(f"Error connecting to ZeroTier: {str(e)}")
+        logger.error(f"Error connecting to ZeroTier: {str(e)}")
         zerotier_status = f"Connection error: {str(e)}"
         return False
 
@@ -102,7 +114,7 @@ def monitor_zerotier_connection():
                     if "OK" in result.stdout and "PRIVATE" not in result.stdout:
                         zerotier_connected = True
                         zerotier_status = "Connected and authorized"
-                        print("Successfully connected to ZeroTier network")
+                        logger.info("Successfully connected to ZeroTier network")
                         break
                 
                 attempts += 1
@@ -119,7 +131,7 @@ def monitor_zerotier_connection():
                     zerotier_status = f"Waiting for authorization... ({minutes_waiting}m)"
                 
             except Exception as e:
-                print(f"Error monitoring ZeroTier: {str(e)}")
+                logger.error(f"Error monitoring ZeroTier: {str(e)}")
                 # Sleep before retrying to avoid tight error loops
                 time.sleep(30)
     
@@ -164,7 +176,7 @@ def form_request(sensor_ip, network, station, location, channel, starttime, endt
     timeselect = f'from={start_timestamp}&to={end_timestamp}'
     request = f'http://{sensor_ip}/data?channel={seed_params}&{timeselect}'
     
-    print(f"[DEBUG] Created request URL: {request}")
+    logger.debug(f"Created request URL: {request}")
     return request
 
 def make_urls(zerotier_ips, request_params, data_dir=''):
@@ -184,17 +196,17 @@ def make_urls(zerotier_ips, request_params, data_dir=''):
     urls = []
     outfiles = []
     
-    print(f"[DEBUG] zerotier_ips: {zerotier_ips}")
-    print(f"[DEBUG] request_params length: {len(request_params)}")
+    logger.debug(f"zerotier_ips: {zerotier_ips}")
+    logger.debug(f"request_params length: {len(request_params)}")
     if request_params:
-        print(f"[DEBUG] Sample request_param: {request_params[0]}")
+        logger.debug(f"Sample request_param: {request_params[0]}")
     
     for params in request_params:
         network, station, location, channel, start_time, end_time = params
         
         # Check if the station is in zerotier_ips
         if station not in zerotier_ips:
-            print(f"[WARNING] Station {station} not found in zerotier_ips")
+            logger.warning(f"Station {station} not found in zerotier_ips")
             continue
             
         # Get the sensor IP
@@ -229,16 +241,16 @@ def make_urls(zerotier_ips, request_params, data_dir=''):
         
         # Check if the file already exists
         if outfile.is_file():
-            print(f"File {outfile} already exists, skipping request")
+            logger.info(f"File {outfile} already exists, skipping request")
             continue
             
         urls.append(request_url)
         outfiles.append(outfile)
         
-    print(f"[DEBUG] Generated {len(urls)} URLs and outfiles")
+    logger.debug(f"Generated {len(urls)} URLs and outfiles")
     if urls:
-        print(f"[DEBUG] Sample URL: {urls[0]}")
-        print(f"[DEBUG] Sample outfile: {outfiles[0]}")
+        logger.debug(f"Sample URL: {urls[0]}")
+        logger.debug(f"Sample outfile: {outfiles[0]}")
     
     return urls, outfiles
 
@@ -246,27 +258,27 @@ async def make_async_request(session, semaphore, request_url, outfile):
     """Make an async HTTP request and save the response to a file"""
     async with semaphore:
         try:
-            print(f"Requesting: {request_url}")
+            logger.info(f"Requesting: {request_url}")
             async with session.get(request_url) as resp:
-                print(f'Request at {datetime.now()}')
+                logger.info(f'Request at {datetime.now()}')
                 # Raise HTTP error for 4xx/5xx errors
                 resp.raise_for_status()
                 
                 # Read binary data from the response
                 data = await resp.read()
                 if len(data) == 0:
-                    print(f"[ERROR] Empty response for {request_url}. Won't write a zero byte file.")
+                    logger.error(f"Empty response for {request_url}. Won't write a zero byte file.")
                     return
                     
                 # Now write data
                 with open(outfile, "wb") as f:
                     f.write(data)
-                print(f"Successfully wrote data to {outfile}")
+                logger.info(f"Successfully wrote data to {outfile}")
                 
         except aiohttp.ClientResponseError as e:
-            print(f"[ERROR] Client error for {request_url}: {e}")
+            logger.error(f"Client error for {request_url}: {e}")
         except Exception as e:
-            print(f"[ERROR] Unexpected error for {request_url}: {e}")
+            logger.error(f"Unexpected error for {request_url}: {e}")
 
 def iterate_chunks(start, end, chunksize):
     '''
@@ -314,13 +326,13 @@ async def get_data(request_params, zerotier_ips, data_dir='',
                 (network, station, location, channel, query_start, query_end)
             )
     
-    print(f"Split {len(request_params)} original requests into {len(chunked_request_params)} chunked requests")
+    logger.info(f"Split {len(request_params)} original requests into {len(chunked_request_params)} chunked requests")
     
     # Generate URLs and output file paths for the chunked requests
     urls, outfiles = make_urls(zerotier_ips, chunked_request_params, data_dir)
     
     if not urls:
-        print("[ERROR] No URLs generated for data fetching")
+        logger.error("No URLs generated for data fetching")
         return
         
     # Group requests by IP to prevent overloading any single server
@@ -343,7 +355,7 @@ async def get_data(request_params, zerotier_ips, data_dir='',
             for request_url, outfile in reqs:
                 # Skip if the file already exists
                 if outfile.is_file():
-                    print(f"File {outfile} already exists, skipping download")
+                    logger.info(f"File {outfile} already exists, skipping download")
                     continue
                 
                 task = asyncio.create_task(
@@ -352,11 +364,11 @@ async def get_data(request_params, zerotier_ips, data_dir='',
                 tasks.append(task)
         
         if tasks:
-            print(f"Starting {len(tasks)} download tasks")
+            logger.info(f"Starting {len(tasks)} download tasks")
             await asyncio.gather(*tasks)
-            print("All download tasks completed")
+            logger.info("All download tasks completed")
         else:
-            print("No download tasks to execute")
+            logger.info("No download tasks to execute")
 
 def send_data_to_aws():
     """
@@ -365,50 +377,50 @@ def send_data_to_aws():
     """
     global next_run_time
     
-    print("================= STARTING DATA SEND OPERATION =================")
+    logger.info("================= STARTING DATA SEND OPERATION =================")
     
     # Check if ZeroTier is connected before proceeding
     if not zerotier_connected:
-        print("ZeroTier not connected, skipping data send")
+        logger.info("ZeroTier not connected, skipping data send")
         next_run_time = datetime.now() + timedelta(days=1)
         return
     
     try:
         # Create an S3 client
-        print("Creating S3 client for region:", region)
+        logger.info("Creating S3 client for region:", region)
         s3 = boto3.client('s3', region_name=region)
                
         # Generate timestamp folder for organizing files
         timestamp_str = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         timestamp_folder = f"data_{timestamp_str}"
-        print(f"Using timestamp folder: {timestamp_folder}")
+        logger.info(f"Using timestamp folder: {timestamp_folder}")
         
         # Check if bucket exists
         try:
             s3.head_bucket(Bucket=bucket_name)
-            print(f"Bucket {bucket_name} already exists")
+            logger.info(f"Bucket {bucket_name} already exists")
         except s3.exceptions.ClientError as e:
             error_code = e.response['Error']['Code']
             if error_code == '404':
                 # Bucket doesn't exist, create it
                 try:
-                    print(f"Creating bucket {bucket_name} in region {region}")
+                    logger.info(f"Creating bucket {bucket_name} in region {region}")
                     s3.create_bucket(
                         Bucket=bucket_name,
                         CreateBucketConfiguration={
                             'LocationConstraint': region
                         }
                     )
-                    print(f"Bucket {bucket_name} created successfully")
+                    logger.info(f"Bucket {bucket_name} created successfully")
                 except Exception as bucket_create_error:
-                    print(f"Failed to create bucket: {str(bucket_create_error)}")
+                    logger.error(f"Failed to create bucket: {str(bucket_create_error)}")
                     return
             else:
                 # Some other error occurred
-                print(f"Error checking bucket: {str(e)}")
+                logger.error(f"Error checking bucket: {str(e)}")
                 return
         
-        print("Generating request parameters...")        
+        logger.info("Generating request parameters...")        
         # Generate request URLs and output file paths
         request_params = []
         for network in config["networks"]:
@@ -422,11 +434,14 @@ def send_data_to_aws():
                                               start_time, 
                                               end_time))
         
-        print(f"Generated {len(request_params)} request parameters")
-        print(f"Sample request param: {request_params[0] if request_params else 'No request params'}")
+        logger.info(f"Generated {len(request_params)} request parameters")
+        if request_params:
+            logger.info(f"Sample request param: {request_params[0]}")
+        else:
+            logger.warning("No request params generated")
         
         # Make asynchronous requests to download data
-        print("Starting asynchronous data download...")
+        logger.info("Starting asynchronous data download...")
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         try:
@@ -440,18 +455,18 @@ def send_data_to_aws():
                 buffer=timedelta(seconds=120)  # Add 2-minute buffer to each chunk
             ))
         except Exception as e:
-            print(f"Error during asynchronous data download: {str(e)}")
+            logger.error(f"Error during asynchronous data download: {str(e)}")
             import traceback
-            traceback.print_exc()
+            logger.error(traceback.format_exc())
         finally:
             loop.close()
             
         # Check if there are any files to upload
         files_to_upload = list(Path(timestamp_folder).glob('**/*.mseed'))
-        print(f"Found {len(files_to_upload)} files to upload")
+        logger.info(f"Found {len(files_to_upload)} files to upload")
         
         if not files_to_upload:
-            print("No files were downloaded. Skipping S3 upload.")
+            logger.warning("No files were downloaded. Skipping S3 upload.")
             next_run_time = datetime.now() + timedelta(days=1)
             return
         
@@ -459,24 +474,24 @@ def send_data_to_aws():
         uploaded_count = 0
         for file_path in files_to_upload:
             s3_key = str(file_path)  # Keep the same directory structure in S3
-            print(f"Uploading {file_path} to {bucket_name}/{s3_key}")
+            logger.info(f"Uploading {file_path} to {bucket_name}/{s3_key}")
             try:
                 s3.upload_file(str(file_path), bucket_name, s3_key)
-                print(f"Successfully uploaded file to {bucket_name}/{s3_key}")
+                logger.info(f"Successfully uploaded file to {bucket_name}/{s3_key}")
                 uploaded_count += 1
             except Exception as upload_error:
-                print(f"Error uploading {file_path}: {str(upload_error)}")
+                logger.error(f"Error uploading {file_path}: {str(upload_error)}")
         
-        print(f"Uploaded {uploaded_count} out of {len(files_to_upload)} files to S3")
+        logger.info(f"Uploaded {uploaded_count} out of {len(files_to_upload)} files to S3")
     except Exception as e:
-        print(f"Error in send_data_to_aws: {str(e)}")
+        logger.error(f"Error in send_data_to_aws: {str(e)}")
         import traceback
-        traceback.print_exc()
+        logger.error(traceback.format_exc())
     
     # Update the next run time
     next_run_time = datetime.now() + timedelta(days=1)  # Production: 1 day
-    print("================= DATA SEND OPERATION COMPLETE =================")
-    print(f"Next run scheduled for: {next_run_time}")
+    logger.info("================= DATA SEND OPERATION COMPLETE =================")
+    logger.info(f"Next run scheduled for: {next_run_time}")
 
 @app.route("/")
 def home():
@@ -518,7 +533,7 @@ def reconnect_zerotier():
 def delayed_zerotier_connect():
     # Wait a few seconds before trying to connect to avoid startup race conditions
     time.sleep(5)
-    print("Starting ZeroTier connection attempt...")
+    logger.info("Starting ZeroTier connection attempt...")
     connect_to_zerotier()
 
 # Start the connection process in a separate thread
