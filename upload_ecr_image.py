@@ -1,23 +1,23 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-# © The Chancellor, Masters and Scholars of The University of Oxford. All rights reserved.
-
-# Default configuration variables
 import json
+import os
+import platform
+import subprocess
+import sys
 
 with open("config.json") as f:
     config = json.load(f)
-
 REGION = "eu-west-2"
 REPOSITORY = config["repository"] 
 TAG = "latest"
 
-import os
-import subprocess
-import sys
-
 def run_command(command, check=True, silent=False):
     """Run a shell command and return the output."""
+    # Add sudo for Docker commands on Linux
+    if platform.system() == 'Linux' and ('docker build' in command or 'docker push' in command):
+        command = f"sudo {command}"
+        
     if not silent:
         print(f"Running: {command}")
     result = subprocess.run(command, shell=True, check=check, text=True, capture_output=True)
@@ -53,9 +53,13 @@ def get_ecr_login():
     password = password_result.stdout.strip()
     
     # Login to Docker (using password-stdin for security)
-    print(f"Running: docker login --username AWS --password-stdin {account_id}.dkr.ecr.{REGION}.amazonaws.com")
+    login_cmd = f"docker login --username AWS --password-stdin {account_id}.dkr.ecr.{REGION}.amazonaws.com"
+    if platform.system() == 'Linux':
+        login_cmd = f"sudo {login_cmd}"
+    
+    print(f"Running: {login_cmd}")
     login_process = subprocess.run(
-        f"echo {password} | docker login --username AWS --password-stdin {account_id}.dkr.ecr.{REGION}.amazonaws.com",
+        f"echo {password} | {login_cmd}",
         shell=True, check=True, text=True, capture_output=True
     )
     if login_process.stdout:
