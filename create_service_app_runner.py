@@ -1,8 +1,6 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-# © The Chancellor, Masters and Scholars of The University of Oxford. All rights reserved.
+# -*- coding: utf-8 -*-*
 
-# Default configuration variables
 import json
 
 with open("config.json") as f:
