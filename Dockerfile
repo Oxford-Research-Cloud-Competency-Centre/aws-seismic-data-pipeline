@@ -5,6 +5,9 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y curl
 RUN curl -s https://install.zerotier.com | bash
 
+# Install gcc 
+RUN apt-get install -y gcc
+
 # Copy application files
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
