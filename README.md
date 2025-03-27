@@ -110,9 +110,31 @@ https://www.docker.com/get-started/
 
 
 <details>
-<summary><h2>Creating the service</h2></summary>
+<summary><h2>Creating the service (EC2 instance)</h2></summary>
 
-Run create_service.py
+<details>
+<summary>Step 1. Create a SSH keypair </summary>
+
+This is not required but strongly recommended to be able to SSH into the cloud instance (either from browser or terminal) so that you can debug problems and update your software. 
+
+https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/create-key-pairs.html
+
+***
+</details>
+
+<details>
+<summary>Step 2. Put the key name into the script (create_service_ec2.py) </summary>
+
+ec2_ssh_key_name = "your-key-name"
+
+***
+</details>
+
+<details>
+<summary>Step 3. Run the script (create_service_ec2.py) </summary>
+
+***
+</details>
 
 </details>
 

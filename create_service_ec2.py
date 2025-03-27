@@ -3,6 +3,8 @@ import boto3
 import json
 import time
 
+ec2_ssh_key_name = "your-key-name"
+
 # Load config
 with open("config.json") as f:
     config = json.load(f)
@@ -169,7 +171,7 @@ try:
         MaxCount=1,
         SecurityGroupIds=[sg_id],
         UserData=user_data,
-        KeyName="vondermanzen-eu-west-2",  # Using your existing key pair
+        KeyName=ec2_ssh_key_name,  # Using your existing key pair
         IamInstanceProfile={'Name': role_name},
         TagSpecifications=[
             {
