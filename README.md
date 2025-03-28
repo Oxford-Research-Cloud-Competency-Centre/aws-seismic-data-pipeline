@@ -123,16 +123,11 @@ https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/create-key-pairs.html
 </details>
 
 <details>
-<summary>Step 2. Put the key name into the script (create_service_ec2.py) </summary>
+<summary>Step 2. Run the script (create_service_ec2.py) </summary>
 
-ec2_ssh_key_name = "your-key-name"
+Optionally, enter the SSH key when prompted
 
-***
-</details>
-
-<details>
-<summary>Step 3. Run the script (create_service_ec2.py) </summary>
-
+![Run script](README_images/create_service_ec2.png)
 ***
 </details>
 
