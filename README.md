@@ -75,7 +75,15 @@ https://www.python.org/downloads/
 </details>
 
 <details>
-<summary>Step 2. Install Docker on your local machine </summary>
+<summary>Step 2. Install the boto3 Python module </summary>
+
+pip install boto3
+
+***
+</details>
+
+<details>
+<summary>Step 3. Install Docker on your local machine </summary>
 
 https://www.docker.com/get-started/
 
@@ -83,7 +91,7 @@ https://www.docker.com/get-started/
 </details>
 
 <details>
-<summary>Step 3. Run script upload_ecr_image.py </summary>
+<summary>Step 4. Run script upload_ecr_image.py </summary>
 
 ![Access key](README_images/upload_ecr_image.png)
 
@@ -91,7 +99,7 @@ https://www.docker.com/get-started/
 </details>
 
 <details>
-<summary>Step 4. In the AWS Console search bar, type "ecr" </summary>
+<summary>Step 5. In the AWS Console search bar, type "ecr" </summary>
 
 ![Access key](README_images/search_ecr.png)
 
@@ -99,7 +107,7 @@ https://www.docker.com/get-started/
 </details>
 
 <details>
-<summary>Step 5. Check that the repository appears </summary>
+<summary>Step 6. Check that the repository appears </summary>
 
 ![ECR repository](README_images/ecr_repositories.png)
 
