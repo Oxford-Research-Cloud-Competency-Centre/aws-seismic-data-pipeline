@@ -254,7 +254,7 @@ def make_urls(zerotier_ips, request_params, data_dir=''):
             end_time
         )
         
-        # Create directory structure for year/month/day
+        # Extract date and time components for the filename
         year = start_time.year
         month = start_time.month
         day = start_time.day
@@ -262,13 +262,10 @@ def make_urls(zerotier_ips, request_params, data_dir=''):
         minute = start_time.minute
         second = start_time.second
         
-        ddir = data_dir / f"{year}/{month:02d}/{day:02d}"
-        ddir.mkdir(exist_ok=True, parents=True)
-        
-        # Format filename according to the same pattern used in data_pipeline.py
+        # Format filename with date in the filename instead of using subfolders
         seed_params = f'{network}.{station}.{location}.{channel}'
         timestamp = f'{year}{month:02d}{day:02d}T{hour:02d}{minute:02d}{second:02d}'
-        outfile = ddir / f"{seed_params}.{timestamp}.mseed"
+        outfile = data_dir / f"{seed_params}.{timestamp}.mseed"
         
         # Check if the file already exists
         if outfile.is_file():
@@ -308,8 +305,33 @@ async def make_async_request(session, semaphore, request_url, outfile):
                 
         except aiohttp.ClientResponseError as e:
             logger.error(f"Client error for {request_url}: {e}")
+            # Create a placeholder file to indicate failure
+            create_placeholder_file(outfile, "HTTP_ERROR", str(e))
         except Exception as e:
             logger.error(f"Unexpected error for {request_url}: {e}")
+            # Create a placeholder file to indicate failure
+            create_placeholder_file(outfile, "CONNECTION_ERROR", str(e))
+
+def create_placeholder_file(outfile, error_type, error_message):
+    """Create a placeholder file to indicate a failed request"""
+    try:
+        # Create the directory if it doesn't exist
+        outfile.parent.mkdir(exist_ok=True, parents=True)
+        
+        # Create a placeholder file with error information
+        with open(outfile, "w") as f:
+            f.write(f"PLACEHOLDER_FILE\n")
+            f.write(f"ERROR_TYPE: {error_type}\n")
+            f.write(f"ERROR_MESSAGE: {error_message}\n")
+            f.write(f"TIMESTAMP: {datetime.now().isoformat()}\n")
+            f.write(f"ORIGINAL_REQUEST: {outfile.name}\n")
+            f.write(f"STATION: {outfile.name.split('.')[1]}\n")
+            f.write(f"CHANNEL: {outfile.name.split('.')[3]}\n")
+            f.write(f"TIME_PERIOD: {outfile.name.split('.')[4]}\n")
+        
+        logger.info(f"Created placeholder file for failed request: {outfile}")
+    except Exception as e:
+        logger.error(f"Failed to create placeholder file: {str(e)}")
 
 def iterate_chunks(start, end, chunksize):
     '''
@@ -378,28 +400,89 @@ async def get_data(request_params, zerotier_ips, data_dir='',
     n_async_requests = 3  # Limit concurrent requests per server
     semaphores = {ip: asyncio.Semaphore(n_async_requests) for ip in requests_by_ip}
     
+    # Create S3 client for uploading files
+    s3 = boto3.client('s3', region_name=region)
+    
     # Make the requests
     async with aiohttp.ClientSession() as session:
-        tasks = []
+        # Process each IP's requests in batches
         for ip, reqs in requests_by_ip.items():
             semaphore = semaphores[ip]
-            for request_url, outfile in reqs:
-                # Skip if the file already exists
-                if outfile.is_file():
-                    logger.info(f"File {outfile} already exists, skipping download")
-                    continue
+            
+            # Process requests in batches of n_async_requests
+            for i in range(0, len(reqs), n_async_requests):
+                batch = reqs[i:i+n_async_requests]
+                tasks = []
                 
-                task = asyncio.create_task(
-                    make_async_request(session, semaphore, request_url, outfile)
-                )
-                tasks.append(task)
+                for request_url, outfile in batch:
+                    # Skip if the file already exists
+                    if outfile.is_file():
+                        logger.info(f"File {outfile} already exists, skipping download")
+                        continue
+                    
+                    task = asyncio.create_task(
+                        make_async_request(session, semaphore, request_url, outfile)
+                    )
+                    tasks.append((task, outfile))
+                
+                if tasks:
+                    logger.info(f"Starting batch of {len(tasks)} download tasks for IP {ip}")
+                    # Wait for all tasks in this batch to complete
+                    await asyncio.gather(*[task for task, _ in tasks])
+                    logger.info(f"Batch of {len(tasks)} download tasks completed for IP {ip}")
+                    
+                    # Upload completed files to S3 and delete them locally
+                    for _, outfile in tasks:
+                        if outfile.is_file():
+                            try:
+                                # Check if this is a placeholder file
+                                is_placeholder = False
+                                try:
+                                    with open(outfile, 'r') as f:
+                                        first_line = f.readline().strip()
+                                        if first_line == "PLACEHOLDER_FILE":
+                                            is_placeholder = True
+                                            logger.info(f"Uploading placeholder file: {outfile}")
+                                except Exception as e:
+                                    logger.warning(f"Error checking if file is placeholder: {str(e)}")
+                                
+                                # Upload the file to S3
+                                s3_key = str(outfile.name)  # Use just the filename without path
+                                logger.info(f"Uploading {outfile} to {bucket_name}/{s3_key}")
+                                s3.upload_file(str(outfile), bucket_name, s3_key)
+                                logger.info(f"S3 upload completed successfully for {outfile}")
+                                
+                                # Add metadata to indicate if this is a placeholder file
+                                if is_placeholder:
+                                    logger.info(f"Adding placeholder tag to {s3_key}")
+                                    s3.put_object_tagging(
+                                        Bucket=bucket_name,
+                                        Key=s3_key,
+                                        Tagging={
+                                            'TagSet': [
+                                                {
+                                                    'Key': 'is_placeholder',
+                                                    'Value': 'true'
+                                                }
+                                            ]
+                                        }
+                                    )
+                                
+                                # Delete the file from local storage
+                                try:
+                                    logger.info(f"Deleting local file: {outfile}")
+                                    os.remove(outfile)
+                                    logger.info(f"Successfully deleted local file: {outfile}")
+                                except Exception as e:
+                                    logger.warning(f"Failed to delete local file {outfile}: {str(e)}")
+                                    
+                            except Exception as upload_error:
+                                logger.error(f"Error uploading {outfile}: {str(upload_error)}")
+                                logger.error(f"Error details: {type(upload_error).__name__}: {str(upload_error)}")
+                                import traceback
+                                logger.error(traceback.format_exc())
         
-        if tasks:
-            logger.info(f"Starting {len(tasks)} download tasks")
-            await asyncio.gather(*tasks)
-            logger.info("All download tasks completed")
-        else:
-            logger.info("No download tasks to execute")
+        logger.info("All download tasks completed")
 
 def send_data_to_aws():
     """
@@ -411,12 +494,19 @@ def send_data_to_aws():
     logger.info("================= STARTING DATA SEND OPERATION =================")
     
     # Check if ZeroTier is connected before proceeding
-    if not zerotier_connected:
-        logger.info("ZeroTier not connected, skipping data send")
-        next_run_time = datetime.now() + timedelta(days=1)
-        return
+    # Comment out this check to allow testing without VPN
+    # if not zerotier_connected:
+    #     logger.info("ZeroTier not connected, skipping data send")
+    #     next_run_time = datetime.now() + timedelta(days=1)
+    #     return
     
     try:
+        # Verify S3 configuration before proceeding
+        if not verify_s3_configuration():
+            logger.error("S3 configuration verification failed. Aborting data send operation.")
+            next_run_time = datetime.now() + timedelta(days=1)
+            return
+            
         # Create an S3 client
         logger.info("Creating S3 client for region:", region)
         s3 = boto3.client('s3', region_name=region)
@@ -454,13 +544,21 @@ def send_data_to_aws():
         logger.info("Generating request parameters...")        
         # Generate request URLs and output file paths
         request_params = []
+        
+        # Get the current date and truncate to midnight
+        today = datetime.utcnow()
+        today_midnight = datetime(today.year, today.month, today.day, 0, 0, 0)
+        
+        # Calculate the start time (24 hours before midnight)
+        start_time = today_midnight - timedelta(hours=24)
+        end_time = today_midnight
+        
+        logger.info(f"Requesting data from {start_time} to {end_time}")
+        
         for network in config["networks"]:
             for station in config["stations"]:
                 for location in config["locations"]:
                     for channel in config["channels"]:
-                        # Get data for exactly the past 24 hours
-                        end_time = datetime.utcnow()
-                        start_time = end_time - timedelta(hours=24)
                         request_params.append((network, station, location, channel, 
                                               start_time, 
                                               end_time))
@@ -492,34 +590,19 @@ def send_data_to_aws():
         finally:
             loop.close()
             
-        # Check if there are any files to upload
-        files_to_upload = list(Path(timestamp_folder).glob('**/*.mseed'))
-        logger.info(f"Found {len(files_to_upload)} files to upload")
-        
-        if not files_to_upload:
-            logger.warning("No files were downloaded. Skipping S3 upload.")
-            next_run_time = datetime.now() + timedelta(days=1)
-            return
-        
-        # Upload downloaded files to S3
-        uploaded_count = 0
-        for file_path in files_to_upload:
-            s3_key = str(file_path)  # Keep the same directory structure in S3
-            logger.info(f"Uploading {file_path} to {bucket_name}/{s3_key}")
-            try:
-                s3.upload_file(str(file_path), bucket_name, s3_key)
-                logger.info(f"Successfully uploaded file to {bucket_name}/{s3_key}")
-                uploaded_count += 1
-            except Exception as upload_error:
-                logger.error(f"Error uploading {file_path}: {str(upload_error)}")
-        
-        logger.info(f"Uploaded {uploaded_count} out of {len(files_to_upload)} files to S3")
+        # Clean up the timestamp folder if it's empty
+        try:
+            if os.path.exists(timestamp_folder) and not os.listdir(timestamp_folder):
+                os.rmdir(timestamp_folder)
+                logger.info(f"Removed empty directory: {timestamp_folder}")
+        except Exception as e:
+            logger.warning(f"Failed to remove directory {timestamp_folder}: {str(e)}")
     except Exception as e:
         logger.error(f"Error in send_data_to_aws: {str(e)}")
         import traceback
         logger.error(traceback.format_exc())
     
-    # Update the next run time
+    # Update the next run time to be exactly 24 hours from now
     next_run_time = datetime.now() + timedelta(days=1)  # Production: 1 day
     logger.info("================= DATA SEND OPERATION COMPLETE =================")
     logger.info(f"Next run scheduled for: {next_run_time}")
@@ -531,9 +614,15 @@ def home():
 @app.route("/get-next-run-time")
 def get_next_run_time():
     """Return the time until the next scheduled run in seconds"""
+    # Calculate time until next run
     time_remaining = (next_run_time - datetime.now()).total_seconds()
+    
+    # Format the next run time for display
+    next_run_formatted = next_run_time.strftime("%Y-%m-%d %H:%M:%S UTC")
+    
     return jsonify({
         "next_run_seconds": max(0, time_remaining),
+        "next_run_formatted": next_run_formatted,
         "zerotier_connected": zerotier_connected,
         "zerotier_status": zerotier_status
     })
@@ -541,11 +630,12 @@ def get_next_run_time():
 @app.route("/trigger-manually", methods=["POST"])
 def trigger_manually():
     """Manually trigger the data send function"""
-    if not zerotier_connected:
-        return jsonify({
-            "status": "error", 
-            "message": f"ZeroTier not connected. Status: {zerotier_status}"
-        })
+    # Remove the VPN connection check to allow testing without VPN
+    # if not zerotier_connected:
+    #     return jsonify({
+    #         "status": "error", 
+    #         "message": f"ZeroTier not connected. Status: {zerotier_status}"
+    #     })
     
     # Start the data send in a separate thread to avoid blocking the response
     threading.Thread(target=send_data_to_aws, daemon=True).start()
@@ -572,5 +662,72 @@ threading.Thread(target=delayed_zerotier_connect, daemon=True).start()
 
 # Initialize the scheduler
 scheduler = BackgroundScheduler()
-scheduler.add_job(func=send_data_to_aws, trigger="interval", days=1)
+# Schedule the job to run at 00:05 UTC every day (5 minutes after midnight)
+# This ensures we're collecting data for the previous day
+scheduler.add_job(func=send_data_to_aws, trigger="cron", hour=0, minute=5)
 scheduler.start()
+
+def verify_s3_configuration():
+    """Verify S3 bucket configuration and permissions"""
+    try:
+        logger.info("Verifying S3 configuration...")
+        s3 = boto3.client('s3', region_name=region)
+        
+        # Check if bucket exists
+        try:
+            s3.head_bucket(Bucket=bucket_name)
+            logger.info(f"Bucket {bucket_name} exists")
+        except s3.exceptions.ClientError as e:
+            error_code = e.response['Error']['Code']
+            if error_code == '404':
+                logger.error(f"Bucket {bucket_name} does not exist")
+                return False
+            elif error_code == '403':
+                logger.error(f"Access denied to bucket {bucket_name}. Check permissions.")
+                return False
+            else:
+                logger.error(f"Error checking bucket: {str(e)}")
+                return False
+        
+        # Try to upload a small test file
+        test_file_path = Path("s3_test.txt")
+        try:
+            with open(test_file_path, "w") as f:
+                f.write("S3 test file")
+            
+            logger.info(f"Uploading test file to {bucket_name}/s3_test.txt")
+            s3.upload_file(str(test_file_path), bucket_name, "s3_test.txt")
+            logger.info("Test file uploaded successfully")
+            
+            # Clean up test file
+            os.remove(test_file_path)
+            logger.info("Test file deleted")
+            
+            return True
+        except Exception as e:
+            logger.error(f"Error uploading test file: {str(e)}")
+            logger.error(f"Error details: {type(e).__name__}: {str(e)}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return False
+    except Exception as e:
+        logger.error(f"Error verifying S3 configuration: {str(e)}")
+        logger.error(f"Error details: {type(e).__name__}: {str(e)}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return False
+
+@app.route("/verify-s3", methods=["POST"])
+def verify_s3():
+    """Manually verify S3 configuration"""
+    result = verify_s3_configuration()
+    if result:
+        return jsonify({
+            "status": "success", 
+            "message": "S3 configuration verified successfully"
+        })
+    else:
+        return jsonify({
+            "status": "error", 
+            "message": "S3 configuration verification failed. Check logs for details."
+        })

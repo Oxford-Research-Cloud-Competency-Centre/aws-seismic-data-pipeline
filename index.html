@@ -65,8 +65,15 @@
     <div class="card">
         <h2>Next Scheduled Data Send</h2>
         <div>Time until next scheduled run: <span id="countdown" class="countdown">calculating...</span></div>
+        <div>Next run scheduled for: <span id="next-run-time">calculating...</span></div>
         <button id="trigger-btn" class="button">Trigger Data Send Now</button>
         <div id="result-message" style="margin-top: 15px;"></div>
+    </div>
+
+    <div class="card">
+        <h2>S3 Configuration</h2>
+        <button id="verify-s3-btn" class="button" style="background-color: #6c757d;">Verify S3 Configuration</button>
+        <div id="s3-result-message" style="margin-top: 15px;"></div>
     </div>
 
     <script>
@@ -82,6 +89,9 @@
                     document.getElementById('countdown').textContent = 
                         `${hours}h ${minutes}m ${remainingSeconds}s`;
                     
+                    // Update next run time
+                    document.getElementById('next-run-time').textContent = data.next_run_formatted;
+                    
                     // Update ZeroTier status
                     const statusElement = document.getElementById('zerotier-status');
                     statusElement.textContent = data.zerotier_status;
@@ -95,8 +105,9 @@
                         statusElement.className = 'status disconnected';
                     }
                     
-                    // Update trigger button state based on ZeroTier status
-                    document.getElementById('trigger-btn').disabled = !data.zerotier_connected;
+                    // Always enable the trigger button for testing
+                    // document.getElementById('trigger-btn').disabled = !data.zerotier_connected;
+                    document.getElementById('trigger-btn').disabled = false;
                 })
                 .catch(error => {
                     console.error('Error fetching countdown:', error);
@@ -121,6 +132,23 @@
             .catch(error => {
                 console.error('Error triggering data send:', error);
                 document.getElementById('result-message').textContent = 'Error triggering data send';
+            });
+        });
+        
+        // Verify S3 configuration
+        document.getElementById('verify-s3-btn').addEventListener('click', function() {
+            document.getElementById('s3-result-message').textContent = 'Verifying S3 configuration...';
+            
+            fetch('/verify-s3', {
+                method: 'POST',
+            })
+            .then(response => response.json())
+            .then(data => {
+                document.getElementById('s3-result-message').textContent = data.message;
+            })
+            .catch(error => {
+                console.error('Error verifying S3 configuration:', error);
+                document.getElementById('s3-result-message').textContent = 'Error verifying S3 configuration';
             });
         });
         
