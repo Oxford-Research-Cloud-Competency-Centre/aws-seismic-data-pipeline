@@ -446,8 +446,19 @@ async def get_data(request_params, zerotier_ips, data_dir='',
                                 except Exception as e:
                                     logger.warning(f"Error checking if file is placeholder: {str(e)}")
                                 
+                                # Extract date from filename for S3 folder structure
+                                # Format: network.station.location.channel.YYYYMMDDTHHMMSS.mseed
+                                filename_parts = outfile.name.split('.')
+                                if len(filename_parts) >= 5:
+                                    # Extract date part (YYYYMMDD)
+                                    date_part = filename_parts[4][:8]
+                                    # Create S3 key with date folder
+                                    s3_key = f"{date_part}/{outfile.name}"
+                                else:
+                                    # Fallback if filename doesn't match expected format
+                                    s3_key = outfile.name
+                                
                                 # Upload the file to S3
-                                s3_key = str(outfile.name)  # Use just the filename without path
                                 logger.info(f"Uploading {outfile} to {bucket_name}/{s3_key}")
                                 s3.upload_file(str(outfile), bucket_name, s3_key)
                                 logger.info(f"S3 upload completed successfully for {outfile}")
